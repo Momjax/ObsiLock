@@ -10,8 +10,8 @@ services:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
       MYSQL_PASSWORD: ${DB_PASS}
-    ports:
-      - "3306:3306"
+    # ports:
+    #   - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -31,8 +31,8 @@ services:
       # PMA_USER: root
       # PMA_PASSWORD: root
     # user: 1000:1000
-    ports:
-      - "8080:80"
+    # ports:
+    #   - "8080:80"
     depends_on:
       - db
     networks:
@@ -45,7 +45,7 @@ services:
       - "traefik.http.routers.phpmyadmin-obsilock.entrypoints=web"
       - "traefik.http.routers.phpmyadmin-obsilock.rule=Host(`phpmyadmin.${DOMAIN_NAME}`)"
       - "traefik.http.routers.phpmyadmin-obsilock.service=phpmyadmin-obsilock"
-      - "traefik.http.services.phpmyadmin-obsilock.loadbalancer.server.port=9000"
+      - "traefik.http.services.phpmyadmin-obsilock.loadbalancer.server.port=80"
 
   # API PHP
   api:
