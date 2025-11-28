@@ -1,0 +1,8 @@
+DB_HOST=obsilock_db
+DB_NAME=coffre_fort
+DB_USER=obsilock_user
+DB_PASS=SDNENJI2329nfzehzenideza
+DOMAIN_NAME=obsilock.iris.a3n.fr
+MYSQL_ROOT_PASSWORD=ANEI7875NZJEANI09njiazo90
+
+JWT_SECRET=nejifbzenfiu5674zdbijze

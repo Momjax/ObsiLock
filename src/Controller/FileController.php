@@ -169,4 +169,22 @@ class FileController
         ]));
         return $response->withHeader('Content-Type', 'application/json');
     }
+    // GET /me/quota - Stats quota
+    public function quota(Request $request, Response $response): Response
+    {
+        $user = $request->getAttribute('user');
+        $userInfo = $this->users->find($user['user_id']);
+
+        $percent = $userInfo['quota_total'] > 0 
+            ? round(($userInfo['quota_used'] / $userInfo['quota_total']) * 100, 2) 
+            : 0;
+
+        $response->getBody()->write(json_encode([
+            'total' => (int)$userInfo['quota_total'],
+            'used' => (int)$userInfo['quota_used'],
+            'percent' => (float)$percent
+        ], JSON_PRETTY_PRINT));
+        
+        return $response->withHeader('Content-Type', 'application/json');
+    }
 }
