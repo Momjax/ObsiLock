@@ -1,0 +1,96 @@
+services:
+  # Base de données MySQL
+  db:
+    image: mysql:8.0
+    container_name: obsilock_db
+    hostname: obsilock_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASS}
+    # ports:
+    #   - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      obsilock_network:
+        ipv4_address: 192.168.10.2
+
+  # phpMyAdmin
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:5.2.1
+    container_name: obsilock_phpmyadmin
+    hostname: obsilock_phpmyadmin 
+    restart: unless-stopped
+    environment:
+      PMA_HOST: ${DB_HOST}
+      PMA_PORT: 3306
+      # PMA_USER: root
+      # PMA_PASSWORD: root
+    # user: 1000:1000
+    # ports:
+    #   - "8080:80"
+    depends_on:
+      - db
+    networks:
+      obsilock_network:
+        ipv4_address: 192.168.10.3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # phpmyadmin-obsilock en HTTP sur phpmyadmin-obsilock.iris.a3n.fr:8080
+      - "traefik.http.routers.phpmyadmin-obsilock.entrypoints=web"
+      - "traefik.http.routers.phpmyadmin-obsilock.rule=Host(`phpmyadmin.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.phpmyadmin-obsilock.service=phpmyadmin-obsilock"
+      - "traefik.http.services.phpmyadmin-obsilock.loadbalancer.server.port=80"
+
+  # API PHP
+  api:
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: obsilock_api
+    hostname: obsilock_api
+    restart: unless-stopped
+    volumes:
+      - ./:/var/www/html
+    # ports:
+    #   - "8888:80"
+    depends_on:
+      - db
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      obsilock_network:
+        ipv4_address: 192.168.10.4
+      admin_proxy:
+        ipv4_address: 172.100.10.100 
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # api-obsilock en HTTP sur api-obsilock.iris.a3n.fr:8080
+      - "traefik.http.routers.api-obsilock.entrypoints=web"
+      - "traefik.http.routers.api-obsilock.rule=Host(`api.${DOMAIN_NAME}`)"
+      - "traefik.http.routers.api-obsilock.service=api-obsilock"
+      - "traefik.http.services.api-obsilock.loadbalancer.server.port=80"
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  obsilock_network:
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.10.0/24
+  admin_proxy:
+    external: true
