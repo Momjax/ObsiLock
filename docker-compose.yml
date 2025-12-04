@@ -53,6 +53,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: obsilock_api
+    ports:
+      - "8080:80"
     hostname: obsilock_api
     restart: unless-stopped
     volumes:

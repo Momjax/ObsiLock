@@ -7,6 +7,7 @@ use App\Controller\FileController;
 use App\Model\UserRepository;
 use App\Model\FolderRepository;
 use App\Model\FileRepository;
+use App\Controller\ShareController;
 
 require __DIR__ . '/../vendor/autoload.php';
 
@@ -157,5 +158,27 @@ $app->get('/me/quota', [$fileController, 'quota'])->add($authMiddleware);
 $app->get('/stats', [$fileController, 'stats'])->add($authMiddleware);
 
 $errorMiddleware = $app->addErrorMiddleware(true, true, true);
+
+// ============================================
+// ROUTES JOUR 3 - Partages
+// ============================================
+
+
+
+$shareController = new ShareController($database);
+
+// Créer un partage (protégée)
+$app->post('/shares', [$shareController, 'create'])->add($authMiddleware);
+
+// Lister mes partages (protégée)
+$app->get('/shares', [$shareController, 'list'])->add($authMiddleware);
+
+// Révoquer un partage (protégée)
+$app->post('/shares/{id}/revoke', [$shareController, 'revoke'])->add($authMiddleware);
+
+// Routes publiques (sans authMiddleware)
+$app->get('/s/{token}', [$shareController, 'getPublicMetadata']);
+$app->post('/s/{token}/download', [$shareController, 'downloadPublic']);
+$app->get('/s/{token}/download', [$shareController, 'downloadPublic']);
 
 $app->run();
