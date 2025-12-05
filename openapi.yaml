@@ -1,0 +1,854 @@
+openapi: 3.0.3
+info:
+  title: Coffre-fort numérique — API
+  version: 0.1.0
+  description: |
+    Contrat d'API pour le coffre-fort numérique sécurisé (MVP).
+
+    - Authentification via JWT (Bearer)
+    - Upload chiffré côté serveur (AES-256-GCM recommandé)
+    - Partage par liens publics signés avec expiration/compteur d'usages
+    - Versionnage de fichiers
+
+    Conventions:
+    - Réponses JSON, erreurs normalisées `{error, code}`
+    - Principaux statuts: 200/201/204/400/401/403/404/409/413/422/429/500
+
+  contact:
+    name: Équipe Back-End
+    url: https://example.com/project
+    email: backend@example.com
+externalDocs:
+  description: Doc Swagger interactive (charge le YAML depuis GitHub)
+  url: https://editor.swagger.io/?url=https://raw.githubusercontent.com/AstrowareConception/Coffre-fort-numerique/refs/heads/main/openapi.yaml
+servers:
+  - url: http://localhost:8080
+    description: Développement local
+  - url: https://api.example.com
+    description: Production (exemple)
+
+tags:
+  - name: Auth
+  - name: Folders
+  - name: Files
+  - name: Shares
+  - name: Me
+
+security:
+  - BearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Créer un compte utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+            examples:
+              default:
+                value:
+                  email: alice@example.com
+                  password: SuperPassw0rd!
+      responses:
+        '201':
+          description: Compte créé
+          headers:
+            Location:
+              description: URL de la ressource utilisateur
+              schema:
+                type: string
+                example: /users/42
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+              examples:
+                created:
+                  value:
+                    id: 42
+                    email: alice@example.com
+                    is_admin: false
+                    quota_total: 10737418240
+                    quota_used: 0
+                    created_at: '2025-11-19T14:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Authentifier un utilisateur et obtenir un JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthLoginRequest'
+            examples:
+              default:
+                value:
+                  email: alice@example.com
+                  password: SuperPassw0rd!
+      responses:
+        '200':
+          description: Connecté
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWTToken'
+              examples:
+                ok:
+                  value:
+                    access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                    token_type: Bearer
+                    expires_in: 900
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /folders:
+    get:
+      tags: [Folders]
+      summary: Lister les dossiers de l'utilisateur courant (racine par défaut)
+      parameters:
+        - in: query
+          name: parent_id
+          schema:
+            type: integer
+            nullable: true
+          description: Filtrer par dossier parent (null pour racine)
+      responses:
+        '200':
+          description: Liste de dossiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Folder'
+              examples:
+                sample:
+                  value:
+                    - id: 100
+                      user_id: 42
+                      parent_id: null
+                      name: Documents
+                      created_at: '2025-11-19T14:05:00Z'
+                    - id: 101
+                      user_id: 42
+                      parent_id: null
+                      name: Photos
+                      created_at: '2025-11-19T14:06:00Z'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      tags: [Folders]
+      summary: Créer un dossier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FolderCreateRequest'
+            examples:
+              default:
+                value:
+                  name: Projets
+                  parent_id: 100
+      responses:
+        '201':
+          description: Dossier créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /folders/{id}:
+    delete:
+      tags: [Folders]
+      summary: Supprimer un dossier
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Supprimé
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /files:
+    get:
+      tags: [Files]
+      summary: Lister les fichiers par dossier
+      parameters:
+        - in: query
+          name: folder
+          required: true
+          schema:
+            type: integer
+          description: ID du dossier
+      responses:
+        '200':
+          description: Liste des fichiers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/File'
+              examples:
+                sample:
+                  value:
+                    - id: 500
+                      user_id: 42
+                      folder_id: 100
+                      original_name: contrat.pdf
+                      mime: application/pdf
+                      size: 238122
+                      created_at: '2025-11-19T14:10:00Z'
+                    - id: 501
+                      user_id: 42
+                      folder_id: 100
+                      original_name: facture-2025-11.pdf
+                      mime: application/pdf
+                      size: 58122
+                      created_at: '2025-11-19T14:12:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      tags: [Files]
+      summary: Uploader un fichier (crée la version 1 chiffrée)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [folder_id, file]
+              properties:
+                folder_id:
+                  type: integer
+                  example: 100
+                file:
+                  type: string
+                  format: binary
+                filename:
+                  type: string
+                  description: Nom d'origine si différent de la pièce envoyée
+                  example: scan-carte-id.pdf
+            encoding:
+              file:
+                contentType: application/octet-stream
+      responses:
+        '201':
+          description: Fichier créé avec sa version 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileWithCurrentVersion'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /files/{id}:
+    get:
+      tags: [Files]
+      summary: Récupérer les métadonnées d'un fichier et sa version courante
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Métadonnées + version courante
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileWithCurrentVersion'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    delete:
+      tags: [Files]
+      summary: Supprimer un fichier (logique ou totale selon politique)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Supprimé
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /files/{id}/versions:
+    post:
+      tags: [Files]
+      summary: Ajouter une nouvelle version au fichier
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                filename:
+                  type: string
+                  example: contrat-v2.pdf
+            encoding:
+              file:
+                contentType: application/octet-stream
+      responses:
+        '201':
+          description: Nouvelle version créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileWithCurrentVersion'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /files/{id}/download:
+    get:
+      tags: [Files]
+      summary: Télécharger le contenu du fichier (version courante)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Flux binaire
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="contrat.pdf"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Ressource non disponible (ex. lien figé obsolete)
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /shares:
+    get:
+      tags: [Shares]
+      summary: Lister les liens de partage de l'utilisateur
+      responses:
+        '200':
+          description: Liste des partages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Share'
+              examples:
+                sample:
+                  value:
+                    - id: 900
+                      user_id: 42
+                      kind: file
+                      target_id: 500
+                      label: Contrat client X
+                      token: AbCdEfGhIj
+                      expires_at: '2025-12-31T23:59:59Z'
+                      max_uses: null
+                      remaining_uses: null
+                      is_revoked: false
+                      created_at: '2025-11-19T14:15:00Z'
+                      downloads:
+                        total: 3
+                        last_at: '2025-11-19T15:00:00Z'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      tags: [Shares]
+      summary: Créer un lien de partage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareCreateRequest'
+            examples:
+              byExpiration:
+                value:
+                  kind: file
+                  target_id: 500
+                  label: Envoi contrat à Jean
+                  expires_at: '2025-12-31T23:59:59Z'
+              byMaxUses:
+                value:
+                  kind: folder
+                  target_id: 100
+                  label: Photos vacances
+                  max_uses: 5
+      responses:
+        '201':
+          description: Partage créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Share'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /shares/{id}/revoke:
+    post:
+      tags: [Shares]
+      summary: Révoquer immédiatement un lien de partage
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Révoqué
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /s/{token}:
+    get:
+      tags: [Shares]
+      security: []
+      summary: Infos publiques associées à un token de partage
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+          example: AbCdEfGhIj
+      responses:
+        '200':
+          description: Infos sur la ressource partagée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicShareInfo'
+              examples:
+                file:
+                  value:
+                    kind: file
+                    filename: contrat.pdf
+                    mime: application/pdf
+                    size: 238122
+                    has_multiple_versions: true
+                folder:
+                  value:
+                    kind: folder
+                    name: Photos vacances
+                    total_files: 42
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Lien expiré
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /s/{token}/download:
+    post:
+      tags: [Shares]
+      security: []
+      summary: Télécharger via un lien public signé
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+          example: AbCdEfGhIj
+      responses:
+        '200':
+          description: Flux binaire via lien public
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="contrat.pdf"
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410':
+          description: Lien expiré ou révoqué
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /me/quota:
+    get:
+      tags: [Me]
+      summary: Récupérer le quota de l'utilisateur
+      responses:
+        '200':
+          description: Utilisation et capacité
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quota'
+              examples:
+                sample:
+                  value:
+                    total: 10737418240
+                    used: 5368709120
+                    percent: 50.0
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /me/activity:
+    get:
+      tags: [Me]
+      summary: Derniers événements de l'utilisateur
+      responses:
+        '200':
+          description: Flux d'activité
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ActivityEvent'
+              examples:
+                sample:
+                  value:
+                    - at: '2025-11-19T14:30:00Z'
+                      type: upload
+                      data:
+                        file_id: 500
+                        folder_id: 100
+                        size: 238122
+                    - at: '2025-11-19T15:00:00Z'
+                      type: share_created
+                      data:
+                        share_id: 900
+                        kind: file
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 500
+
+  responses:
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            bad:
+              value:
+                code: BAD_REQUEST
+                error: 'Paramètre manquant: folder'
+    Unauthorized:
+      description: Non authentifié
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            unauth:
+              value:
+                code: UNAUTHORIZED
+                error: Token manquant ou invalide
+    Forbidden:
+      description: Interdit
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            forb:
+              value:
+                code: FORBIDDEN
+                error: Ressource non autorisée
+    NotFound:
+      description: Non trouvé
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            nf:
+              value:
+                code: NOT_FOUND
+                error: Ressource introuvable
+    Conflict:
+      description: Conflit
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            c:
+              value:
+                code: CONFLICT
+                error: Le nom existe déjà
+    PayloadTooLarge:
+      description: Charge trop volumineuse
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            too_big:
+              value:
+                code: PAYLOAD_TOO_LARGE
+                error: Fichier dépasse la taille maximale autorisée
+    UnprocessableEntity:
+      description: Données invalides
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            val:
+              value:
+                code: VALIDATION_ERROR
+                error: name doit faire entre 1 et 128 caractères
+    TooManyRequests:
+      description: Trop de requêtes
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: secondes avant nouvelle tentative
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            rate:
+              value:
+                code: RATE_LIMITED
+                error: Merci de réessayer dans quelques secondes
+    ServerError:
+      description: Erreur serveur
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            err:
+              value:
+                code: SERVER_ERROR
+                error: Une erreur inattendue est survenue
+
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+      example:
+        code: NOT_FOUND
+        error: Ressource introuvable
+
+    User:
+      type: object
+      required: [id, email, is_admin, quota_total, quota_used, created_at]
+      properties:
+        id: { type: integer }
+        email: { type: string, format: email }
+        is_admin: { type: boolean }
+        quota_total: { type: integer, description: octets }
+        quota_used: { type: integer, description: octets }
+        created_at: { type: string, format: date-time }
+
+    AuthRegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+
+    AuthLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+
+    JWTToken:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, description: secondes }
+
+    Folder:
+      type: object
+      required: [id, user_id, parent_id, name, created_at]
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        parent_id: { type: integer, nullable: true }
+        name: { type: string, minLength: 1, maxLength: 128 }
+        created_at: { type: string, format: date-time }
+
+    FolderCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        parent_id: { type: integer, nullable: true }
+
+    File:
+      type: object
+      required: [id, user_id, folder_id, original_name, mime, size, created_at]
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        folder_id: { type: integer }
+        original_name: { type: string }
+        mime: { type: string }
+        size: { type: integer, description: octets }
+        created_at: { type: string, format: date-time }
+
+    FileVersion:
+      type: object
+      required: [id, file_id, version, stored_name, iv, auth_tag, key_envelope, checksum, created_at]
+      properties:
+        id: { type: integer }
+        file_id: { type: integer }
+        version: { type: integer }
+        stored_name: { type: string }
+        iv: { type: string, description: IV base64 }
+        auth_tag: { type: string, description: tag GCM base64 }
+        key_envelope: { type: string, description: Clé de version chiffrée (base64) }
+        checksum: { type: string, description: SHA-256 hex }
+        created_at: { type: string, format: date-time }
+
+    FileWithCurrentVersion:
+      type: object
+      required: [file, current_version]
+      properties:
+        file:
+          $ref: '#/components/schemas/File'
+        current_version:
+          $ref: '#/components/schemas/FileVersion'
+
+    Share:
+      type: object
+      required: [id, user_id, kind, target_id, label, token, expires_at, max_uses, remaining_uses, is_revoked, created_at]
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        kind:
+          type: string
+          enum: [file, folder]
+        target_id: { type: integer }
+        label: { type: string, nullable: true }
+        token: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+        max_uses: { type: integer, nullable: true }
+        remaining_uses: { type: integer, nullable: true }
+        is_revoked: { type: boolean }
+        created_at: { type: string, format: date-time }
+        downloads:
+          type: object
+          nullable: true
+          properties:
+            total: { type: integer }
+            last_at: { type: string, format: date-time, nullable: true }
+
+    ShareCreateRequest:
+      type: object
+      required: [kind, target_id]
+      properties:
+        kind: { type: string, enum: [file, folder] }
+        target_id: { type: integer }
+        label: { type: string, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        max_uses: { type: integer, nullable: true, minimum: 1 }
+      oneOf:
+        - required: [expires_at]
+        - required: [max_uses]
+
+    PublicShareInfo:
+      type: object
+      oneOf:
+        - type: object
+          required: [kind, filename, mime, size, has_multiple_versions]
+          properties:
+            kind: { type: string, enum: [file] }
+            filename: { type: string }
+            mime: { type: string }
+            size: { type: integer }
+            has_multiple_versions: { type: boolean }
+        - type: object
+          required: [kind, name, total_files]
+          properties:
+            kind: { type: string, enum: [folder] }
+            name: { type: string }
+            total_files: { type: integer }
+
+    Quota:
+      type: object
+      required: [total, used, percent]
+      properties:
+        total: { type: integer, description: octets }
+        used: { type: integer, description: octets }
+        percent: { type: number, format: float }
+
+    ActivityEvent:
+      type: object
+      required: [at, type, data]
+      properties:
+        at: { type: string, format: date-time }
+        type:
+          type: string
+          enum: [upload, download, share_created, share_revoked, delete, version_added]
+        data:
+          type: object
+          additionalProperties: true

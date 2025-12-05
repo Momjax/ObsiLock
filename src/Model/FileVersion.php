@@ -67,15 +67,15 @@ class FileVersion
      * @return int
      */
     public function getLastVersionNumber(int $fileId): int
-    {
-        $result = $this->db->get('file_versions', 
-            'version',
-            ['file_id' => $fileId],
-            ['ORDER' => ['version' => 'DESC']]
-        );
+{
+    // Utiliser PDO directement
+    $pdo = $this->db->pdo;
+    $stmt = $pdo->prepare("SELECT MAX(version) as max_version FROM file_versions WHERE file_id = :file_id");
+    $stmt->execute(['file_id' => $fileId]);
+    $result = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-        return $result ? (int)$result : 0;
-    }
+    return $result && $result['max_version'] ? (int)$result['max_version'] : 0;
+}
 
     /**
      * Récupérer une version spécifique
