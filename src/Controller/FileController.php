@@ -41,6 +41,7 @@ class FileController
     {
         $user = $request->getAttribute('user');
         $uploadedFiles = $request->getUploadedFiles();
+        $params = $request->getParsedBody(); // ← AJOUTÉ : Récupérer les paramètres POST
 
         if (!isset($uploadedFiles['file'])) {
             $response->getBody()->write(json_encode(['error' => 'Aucun fichier']));
@@ -74,10 +75,15 @@ class FileController
         // Calculer checksum
         $checksum = hash_file('sha256', $targetPath);
 
+        // ← AJOUTÉ : Récupérer folder_id depuis les paramètres (peut être null)
+        $folderId = isset($params['folder_id']) && $params['folder_id'] !== '' 
+            ? (int)$params['folder_id'] 
+            : null;
+
         // Créer l'entrée en BDD
         $fileId = $this->files->create([
             'user_id' => $user['user_id'],
-            'folder_id' => null,
+            'folder_id' => $folderId, // ← CORRIGÉ : Utilise le folder_id récupéré
             'filename' => $originalName,
             'stored_name' => $storedName,
             'size' => $size,
@@ -102,7 +108,8 @@ class FileController
         $response->getBody()->write(json_encode([
             'message' => 'Fichier uploadé',
             'id' => $fileId,
-            'version' => 1
+            'version' => 1,
+            'folder_id' => $folderId // ← AJOUTÉ : Confirmer le folder_id
         ]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(201);
     }
